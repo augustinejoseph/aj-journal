@@ -36,7 +36,7 @@ export default async function Page() {
           <small>
             {configured
               ? "Only your configured Google account can enter."
-              : `Set ${missingConfig.join(", ")} in .env to open your private diary.`}
+              : `Set ${missingConfig.join(", ")} in APP_CONFIG to open your private diary.`}
           </small>
         </div>
         <span className="login-note">

@@ -1,11 +1,4 @@
-import { loadEnvFile } from "node:process";
-
-// Read local configuration without embedding a deployment hostname in source.
-try {
-  loadEnvFile(".env");
-} catch (error) {
-  if (error.code !== "ENOENT") throw error;
-}
+import "./load-config.mjs";
 
 const origins = [
   ...new Set(
@@ -21,7 +14,7 @@ const origins = [
   ),
 ];
 if (!origins.length)
-  throw new Error("Set AUTH_URL in .env before generating CORS.");
+  throw new Error("Set AUTH_URL in APP_CONFIG before generating CORS.");
 
 console.log(
   JSON.stringify(

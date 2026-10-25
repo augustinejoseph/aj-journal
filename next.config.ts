@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import "./scripts/load-config.mjs";
 const config: NextConfig = {
   async headers() {
     return [

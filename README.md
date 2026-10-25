@@ -1,5 +1,9 @@
 # Still — voice-first private diary
 
+Configuration now uses `.env`: copy `.env.sample` and fill in the JSON string values inside its single `APP_CONFIG` entry. The app, Drizzle migrations, and R2 CORS script load this file. Restart the app after editing it. The previous flat configuration is backed up as `.env.legacy` and is no longer loaded automatically.
+
+For hosting, set one environment variable named `APP_CONFIG` to the JSON object text (without the `APP_CONFIG=` prefix or the surrounding single quotes). Hosted `APP_CONFIG` takes precedence over the local file. These values remain server-side; never put secrets in `next.config`'s `env` option or `NEXT_PUBLIC_` variables.
+
 Next.js App Router, TypeScript, Tailwind, shadcn-style Radix button, Auth.js Google, Drizzle/Neon, private R2 and server-side OpenRouter. Built for one configured owner. No demo authentication bypass, scheduled jobs, paid transcription API, photo analysis, export or history UI.
 
 ## Project documentation
