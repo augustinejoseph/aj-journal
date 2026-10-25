@@ -8,8 +8,17 @@ import {
   jsonb,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+export const users = pgTable("users", {
+  id: text().primaryKey(),
+  email: text().notNull().unique(),
+  googleId: text().unique(),
+  name: text(),
+  image: text(),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
 export const entries = pgTable("entries", {
   id: uuid().primaryKey(),
+  userId: text().references(() => users.id),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   title: text().notNull().default("Untitled recording"),
   body: text().notNull().default(""),

@@ -8,6 +8,13 @@
       "when": 1792949193657,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792953519741,
+      "tag": "0001_modern_blue_blade",
+      "breakpoints": true
     }
   ]
 }

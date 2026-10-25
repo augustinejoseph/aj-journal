@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { allowed } from "@/lib/access";
 import { db } from "@/lib/db";
-import { entries, media, settings } from "@/lib/schema";
+import { entries, media, settings, users } from "@/lib/schema";
 import { and, eq, asc, desc, sql } from "drizzle-orm";
 import { storage } from "@/lib/storage";
 import { storageDateKey } from "@/lib/dates";
@@ -76,10 +76,22 @@ async function handle(
             { error: "This recording was deleted. Remove its local copy." },
             { status: 410 },
           );
+        const email = session!.user!.email!.trim().toLowerCase();
+        const userId = createHash("sha256").update(email).digest("hex");
+        await database
+          .insert(users)
+          .values({
+            id: userId,
+            email,
+            name: session?.user?.name ?? null,
+            image: session?.user?.image ?? null,
+          })
+          .onConflictDoNothing();
         await database
           .insert(entries)
           .values({
             id,
+            userId,
             ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
           })
           .onConflictDoNothing();
