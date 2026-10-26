@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import "./scripts/load-config.mjs";
 const config: NextConfig = {
+  transpilePackages: ["@ajoseph/app-launcher"],
   async headers() {
     return [
       {

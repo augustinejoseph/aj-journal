@@ -11,3 +11,7 @@ Project handoff documentation for **Still**, the private voice-first diary inten
 | [Development](DEVELOPMENT.md) | Local commands, linting, tests, and maintenance conventions          |
 
 These files describe the checked-in implementation. They do not prove that external services are configured or that the production domain is deployed. Keep this folder updated when behavior, infrastructure, or validation results change. Never put credentials, diary content, or private recording samples here.
+
+## Ecosystem launcher
+
+Cross-app architecture and integration instructions: [AJ launcher documentation](../../aj-app-launcher/agent-artifacts/README.md) (local workspace; remote repository creation pending). Local canonical source is the sibling aj-app-launcher/agent-artifacts directory. The public menu grants no application access.

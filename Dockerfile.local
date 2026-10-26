@@ -1,0 +1,9 @@
+# Local development only. Production is deployed from source on Vercel.
+FROM node:24-bookworm-slim
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY vendor ./vendor
+RUN npm ci --no-audit --no-fund && npm cache clean --force
+COPY . .
+ENV NODE_ENV=development NEXT_TELEMETRY_DISABLED=1
+CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]

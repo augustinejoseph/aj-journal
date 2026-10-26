@@ -1,4 +1,5 @@
 "use client";
+import { EcosystemMenu } from "./ecosystem-menu";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Mic,
@@ -471,9 +472,12 @@ export default function Diary({
                 ? "Processing queue"
                 : "Settings"}
           </span>
-          <span className="avatar" title={email}>
-            {email.slice(0, 1).toUpperCase()}
-          </span>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <EcosystemMenu />
+            <span className="avatar" title={email}>
+              {email.slice(0, 1).toUpperCase()}
+            </span>
+          </div>
         </header>
         <div className="content">
           <div className="page-heading">
