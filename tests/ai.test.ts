@@ -37,6 +37,14 @@ it("passes source material separately and validates output", async () => {
   const payload = JSON.parse(fetch.mock.calls[0][1].body);
   expect(payload.messages[1].content).toBe("ഇന്ന് I felt uncertain");
   expect(payload.messages[0].content).toBe(diaryPrompt);
+  expect(payload.provider).toEqual({ require_parameters: true });
+  expect(payload.response_format).toMatchObject({
+    type: "json_schema",
+    json_schema: {
+      strict: true,
+      schema: { required: ["title", "body", "tags"] },
+    },
+  });
 });
 it("rejects malformed output without fabricating a fallback", async () => {
   vi.stubGlobal(
@@ -103,4 +111,21 @@ it("logs provider diagnostics without exposing the key or source", async () => {
     info.mockRestore();
     error.mockRestore();
   }
+});
+
+it("reports plain-text safety output without exposing it in the error", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: "safety-model",
+          choices: [{ message: { content: "User Safety: safe" } }],
+        }),
+      ),
+    ),
+  );
+  await expect(generate("private source", "openrouter/free")).rejects.toThrow(
+    "Writing provider returned an invalid diary response",
+  );
 });

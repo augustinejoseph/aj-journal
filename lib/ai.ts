@@ -42,7 +42,24 @@ export async function generate(
           { role: "system", content: diaryPrompt },
           { role: "user", content: transcript },
         ],
-        response_format: { type: "json_object" },
+        provider: { require_parameters: true },
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "diary_entry",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                body: { type: "string" },
+                tags: { type: "array", items: { type: "string" } },
+              },
+              required: ["title", "body", "tags"],
+              additionalProperties: false,
+            },
+          },
+        },
       }),
       signal: AbortSignal.timeout(45000),
     });
@@ -72,9 +89,22 @@ export async function generate(
       );
     }
     const data = await res.json();
-    const result = generatedSchema.parse(
-      JSON.parse(data.choices[0].message.content),
-    );
+    let result: z.infer<typeof generatedSchema>;
+    try {
+      result = generatedSchema.parse(
+        JSON.parse(data.choices?.[0]?.message?.content),
+      );
+    } catch {
+      console.error("[journal:openrouter] invalid output", {
+        ...details,
+        actualModel: typeof data.model === "string" ? data.model : null,
+        providerRequestId: res.headers.get("x-request-id"),
+        elapsedMs: Date.now() - started,
+      });
+      throw new Error(
+        "Writing provider returned an invalid diary response. Select a model that supports structured JSON output and retry. Source transcript is safe.",
+      );
+    }
     console.info("[journal:openrouter] success", {
       ...details,
       elapsedMs: Date.now() - started,
