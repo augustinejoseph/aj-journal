@@ -2,7 +2,7 @@ import "./load-config.mjs";
 
 const origins = [
   ...new Set(
-    [process.env.AUTH_URL, process.env.PRODUCTION_URL]
+    ["http://localhost:3000", process.env.PRODUCTION_URL]
       .filter(Boolean)
       .map((value) => {
         const url = new URL(value);
@@ -13,8 +13,6 @@ const origins = [
       }),
   ),
 ];
-if (!origins.length)
-  throw new Error("Set AUTH_URL in APP_CONFIG before generating CORS.");
 
 console.log(
   JSON.stringify(

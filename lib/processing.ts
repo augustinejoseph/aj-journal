@@ -15,11 +15,18 @@ export async function uploadChunk(c: LocalChunk) {
     },
   );
   if (!result.uploaded) {
-    const response = await fetch(result.url!, {
-      method: "PUT",
-      body: c.blob,
-      headers: { "Content-Type": c.blob.type },
-    });
+    let response: Response;
+    try {
+      response = await fetch(result.url!, {
+        method: "PUT",
+        body: c.blob,
+        headers: { "Content-Type": c.blob.type },
+      });
+    } catch {
+      throw new Error(
+        `Cloud upload could not connect. Check your connection and R2 CORS: allow ${window.location.origin} with PUT and Content-Type. Audio remains on this device.`,
+      );
+    }
     if (!response.ok)
       throw new Error("Upload interrupted. Audio remains on this device.");
     await api(`entries/${c.entryId}/media/${c.id}`, "POST", {});

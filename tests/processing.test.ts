@@ -118,3 +118,27 @@ it("keeps source intact when transcription fails and releases its lease", async 
     false,
   );
 });
+
+it("explains blocked browser uploads and preserves the local chunk", async () => {
+  m.api.mockResolvedValue({ uploaded: false, url: "https://storage.example" });
+  vi.stubGlobal("window", {
+    location: { origin: "https://journal.ajoseph.dev" },
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+  );
+  await expect(
+    uploadChunk({
+      id: "chunk",
+      entryId: "entry",
+      sequence: 0,
+      kind: "audio",
+      blob: new Blob(["audio"], { type: "audio/webm" }),
+      uploaded: false,
+    }),
+  ).rejects.toThrow(
+    "R2 CORS: allow https://journal.ajoseph.dev with PUT and Content-Type",
+  );
+  expect(m.chunk).not.toHaveBeenCalled();
+});
