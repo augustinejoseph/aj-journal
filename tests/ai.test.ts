@@ -1,26 +1,35 @@
 import { it, expect, vi, afterEach } from "vitest";
 import { generate, diaryPrompt } from "../lib/ai";
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+import { beforeEach } from "vitest";
+beforeEach(() => vi.stubEnv("OPENROUTER_API_KEY", "test-key"));
+it("reports missing configuration", async () => {
+  vi.stubEnv("OPENROUTER_API_KEY", "");
+  await expect(generate("source", "model")).rejects.toThrow(
+    "API key is missing",
+  );
+});
 it("passes source material separately and validates output", async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  title: "A day",
-                  body: "I felt uncertain.",
-                  tags: ["life"],
-                }),
-              },
+  const fetch = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: "A day",
+                body: "I felt uncertain.",
+                tags: ["life"],
+              }),
             },
-          ],
-        }),
-      ),
-    );
+          },
+        ],
+      }),
+    ),
+  );
   vi.stubGlobal("fetch", fetch);
   expect((await generate("ഇന്ന് I felt uncertain", "test/model")).body).toBe(
     "I felt uncertain.",
@@ -32,15 +41,13 @@ it("passes source material separately and validates output", async () => {
 it("rejects malformed output without fabricating a fallback", async () => {
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            choices: [{ message: { content: '{"title":"fake"}' } }],
-          }),
-        ),
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"title":"fake"}' } }],
+        }),
       ),
+    ),
   );
   await expect(generate("source", "model")).rejects.toThrow();
 });

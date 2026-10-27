@@ -49,8 +49,8 @@ export default function Diary({
     [view, setView] = useState("journal"),
     [month, setMonth] = useState(new Date()),
     [busy, setBusy] = useState(false),
-    [message, setMessage] = useState(""),
-    [error, setError] = useState(""),
+    [message, updateMessage] = useState(""),
+    [error, updateError] = useState(""),
     [recording, setRecording] = useState(false),
     [elapsed, setElapsed] = useState(0),
     [model, setModel] = useState(""),
@@ -60,6 +60,15 @@ export default function Diary({
       audio: "",
       photos: [],
     });
+  const [logs, setLogs] = useState<string[]>([]);
+  const setMessage = useCallback((text: string) => {
+    updateMessage(text);
+    if (text) setLogs((previous) => [...previous.slice(-99), text]);
+  }, []);
+  const setError = useCallback((text: string) => {
+    updateError(text);
+    if (text) setLogs((previous) => [...previous.slice(-99), `Error: ${text}`]);
+  }, []);
   const recorder = useRef<MediaRecorder | null>(null),
     current = useRef<LocalSession | null>(null),
     writes = useRef(Promise.resolve()),
@@ -89,7 +98,7 @@ export default function Diary({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setError]);
   useEffect(() => {
     if (!recording) return;
     const start = Date.now();
@@ -647,6 +656,16 @@ export default function Diary({
                   Retry all
                 </Button>
               </div>
+              {logs.length > 0 && (
+                <details className="queue-card">
+                  <summary>Processing log ({logs.length})</summary>
+                  <ol aria-live="polite">
+                    {logs.map((line, index) => (
+                      <li key={index}>{line}</li>
+                    ))}
+                  </ol>
+                </details>
+              )}
               {sessions.map((s) => (
                 <div className="queue-card" key={s.id}>
                   <div>
@@ -699,6 +718,33 @@ export default function Diary({
                         disabled={busy || recording}
                         onClick={async () => {
                           try {
+                            setBusy(true);
+                            setError("");
+                            const session = (await local.sessions()).find(
+                              (s) => s.id === e.id,
+                            );
+                            if (session) {
+                              const chunks = (await local.chunks(e.id)).filter(
+                                (c) => c.kind === "audio",
+                              );
+                              if (chunks.length) {
+                                const recovered = {
+                                  ...session,
+                                  stopped: true,
+                                  count: chunks.length,
+                                };
+                                await local.session(recovered);
+                                setMessage(
+                                  "Recovering audio saved on this device…",
+                                );
+                                await syncSession(recovered);
+                                await refresh();
+                                setMessage(
+                                  "Recovered audio uploaded. Use Retry all to transcribe and write.",
+                                );
+                                return;
+                              }
+                            }
                             const detail = await api<
                               Entry & { media: Media[] }
                             >(`entries/${e.id}`);
@@ -721,6 +767,8 @@ export default function Diary({
                             await refresh();
                           } catch (err) {
                             setError((err as Error).message);
+                          } finally {
+                            setBusy(false);
                           }
                         }}
                       >
