@@ -60,3 +60,47 @@ it("makes provider failures retryable and retains source upstream", async () => 
     "Source transcript is safe",
   );
 });
+
+it("logs provider diagnostics without exposing the key or source", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: { message: "Insufficient credits test-key private-source" },
+          }),
+          {
+            status: 402,
+            headers: { "x-request-id": "provider-request" },
+          },
+        ),
+      ),
+    );
+    await expect(
+      generate("private-source", "test/model", {
+        entryId: "entry-id",
+        modelSource: "database",
+      }),
+    ).rejects.toThrow("credits are exhausted");
+    expect(error).toHaveBeenCalledWith(
+      "[journal:openrouter] provider failure",
+      expect.objectContaining({
+        status: 402,
+        providerRequestId: "provider-request",
+        entryId: "entry-id",
+        modelSource: "database",
+        providerMessage:
+          "Insufficient credits [redacted key] [redacted transcript]",
+      }),
+    );
+    const logs = JSON.stringify([info.mock.calls, error.mock.calls]);
+    expect(logs).not.toContain("test-key");
+    expect(logs).not.toContain("private-source");
+  } finally {
+    info.mockRestore();
+    error.mockRestore();
+  }
+});

@@ -399,6 +399,14 @@ async function handle(
         const result = await generate(
           entry.transcript,
           s?.model || process.env.OPENROUTER_MODEL || "openai/gpt-4.1-mini",
+          {
+            entryId: id,
+            modelSource: s?.model
+              ? "database"
+              : process.env.OPENROUTER_MODEL
+                ? "environment"
+                : "default",
+          },
         );
         await database
           .update(entries)
