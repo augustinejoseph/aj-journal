@@ -64,8 +64,14 @@ async function handle(
         );
       }
       if (method === "POST") {
-        const { id, createdAt } = z
-          .object({ id: uuid, createdAt: z.iso.datetime().optional() })
+        const { id, createdAt, kind, title, body } = z
+          .object({
+            id: uuid,
+            createdAt: z.iso.datetime().optional(),
+            kind: z.enum(["audio", "photo"]).default("audio"),
+            title: z.string().max(200).optional(),
+            body: z.string().max(200000).optional(),
+          })
           .parse(await req.json());
         const [existing] = await database
           .select()
@@ -92,6 +98,16 @@ async function handle(
           .values({
             id,
             userId,
+            kind,
+            ...(kind === "photo"
+              ? {
+                  title: title?.trim() || "Photos from today",
+                  body: body || "",
+                  transcription: "complete",
+                  writing: "complete",
+                  sealed: true,
+                }
+              : {}),
             ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
           })
           .onConflictDoNothing();
@@ -184,6 +200,8 @@ async function handle(
           ).test(data.mime)
         )
           throw new Error("Unsupported media type");
+        if (entry.kind === "photo" && data.kind === "audio")
+          throw new Error("Photo entries cannot contain audio");
         if (entry.sealed && data.kind === "audio") {
           const [saved] = await database
             .select()
@@ -198,7 +216,7 @@ async function handle(
             return Response.json({ uploaded: true, url: null });
           throw new Error("Recording already finished");
         }
-        if (data.kind === "audio")
+        if (data.kind === "audio" || entry.kind === "photo")
           await database
             .update(entries)
             .set({ upload: "processing", error: null })
@@ -266,9 +284,35 @@ async function handle(
       await database
         .update(entries)
         .set({ upload: "failed", error })
-        .where(and(where, eq(entries.sealed, false)));
+        .where(
+          and(where, sql`(${entries.sealed}=false or ${entries.kind}='photo')`),
+        );
       return Response.json({ ok: true });
     }
+    if (p[2] === "photos-complete" && method === "POST") {
+      const { count } = z
+        .object({ count: z.number().int().positive() })
+        .parse(await req.json());
+      const photos = await database
+        .select()
+        .from(media)
+        .where(and(eq(media.entryId, id), eq(media.kind, "photo")));
+      if (photos.length !== count || photos.some((photo) => !photo.uploaded))
+        throw new Error(
+          "Some photos still need uploading. Retry from this device.",
+        );
+      if (entry.kind === "photo")
+        await database
+          .update(entries)
+          .set({ upload: "complete", error: null })
+          .where(where);
+      return Response.json({ ok: true });
+    }
+    if (
+      entry.kind === "photo" &&
+      ["seal", "transcription", "transcript", "generate"].includes(p[2])
+    )
+      throw new Error("Photo entries do not need audio processing");
     if (p[2] === "seal" && method === "POST") {
       const { count } = z
         .object({ count: z.number().int().positive() })

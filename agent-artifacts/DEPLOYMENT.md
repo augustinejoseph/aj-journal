@@ -64,3 +64,11 @@ Use `.env.sample` as the variable-name template. Put local values in ignored `.e
 ## Initial migration baseline
 
 `drizzle/0000_initial.sql` creates the complete schema in one migration, with a matching initial snapshot and journal. It is intended for a fresh database; no database was reset or migrated by this consolidation. Existing databases using the former migration history must not run this rewritten baseline directly.
+
+## Photo entries and live waveform
+
+Apply `0002_photo_entries.sql` with `npm run db:migrate` before deploying the photo-entry UI/API. It adds `entries.kind` with an `audio` default, preserving existing recordings. No media objects are rewritten. Photo-only entries skip audio processing, and unfinished photo uploads can be retried from the device that selected them.
+
+Large photos are resized to a 3840-pixel longest edge and encoded as lossless PNG. Smaller or browser-undecodable supported photos retain their original bytes. The 25 MB upload limit still applies; oversized results are rejected without reducing quality. Browser resizing can convert wide-gamut colors. Camera capture depends on device/browser support; the gallery picker remains available.
+
+For release verification on real mobile devices: capture and select photos; save a photo-only entry; attach photos during recording and stop before upload finishes; retry offline uploads; check waveform response to silence and speech; reopen entries, scroll photos into view, and retry an expired image URL. Audio should download only through **Load audio**.

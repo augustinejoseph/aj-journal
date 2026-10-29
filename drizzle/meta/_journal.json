@@ -15,6 +15,13 @@
       "when": 1792953519741,
       "tag": "0001_modern_blue_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793059200000,
+      "tag": "0002_photo_entries",
+      "breakpoints": true
     }
   ]
 }

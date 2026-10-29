@@ -21,7 +21,9 @@ import {
 } from "lucide-react";
 import { Button } from "./ui/button";
 import Link from "next/link";
-import Image from "next/image";
+import { Waveform } from "./waveform";
+import { PrivatePhoto } from "./private-photo";
+import { optimizePhoto, nextPhotoSequence } from "@/lib/photos";
 import { api } from "@/lib/api";
 import type { Entry, Media } from "@/lib/schema";
 import { local, LocalSession } from "@/lib/local";
@@ -60,6 +62,20 @@ export default function Diary({
       audio: "",
       photos: [],
     });
+  const [inputStream, setInputStream] = useState<MediaStream | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoDraft, setPhotoDraft] = useState<{
+    files: File[];
+    title: string;
+    body: string;
+  } | null>(null);
+  const activeId = useRef<string | null>(null);
+  activeId.current = active?.id ?? null;
+  const audioUrl = useRef("");
+  const mediaRequest = useRef(0);
+  const photoTarget = useRef<string | null>(null);
+  const photoQueue = useRef(Promise.resolve());
+  const camera = useRef<HTMLInputElement>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const setMessage = useCallback((text: string) => {
     updateMessage(text);
@@ -118,6 +134,9 @@ export default function Diary({
   useEffect(
     () => () => {
       if (recorder.current?.state === "recording") recorder.current.stop();
+      recorder.current?.stream.getTracks().forEach((track) => track.stop());
+      if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
+      mediaRequest.current++;
     },
     [],
   );
@@ -128,8 +147,16 @@ export default function Diary({
     dialog?.querySelector<HTMLElement>("button")?.focus();
     return () => previous?.focus();
   }, [active]);
+  useEffect(
+    () => () => {
+      mediaRequest.current++;
+      if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
+      audioUrl.current = "";
+    },
+    [active?.id],
+  );
   async function retry() {
-    if (busy || recording) return;
+    if (busy || recording || photoBusy) return;
     setBusy(true);
     setError("");
     try {
@@ -146,9 +173,10 @@ export default function Diary({
             continue;
           }
           if (s.stopped) {
-            setMessage("Saving audio to your private cloud…");
+            setMessage("Saving media to your private cloud…");
             try {
               await syncSession(s);
+              if (s.kind === "photo") await local.remove(s.id);
             } catch (error) {
               failures.push((error as Error).message);
             }
@@ -165,7 +193,17 @@ export default function Diary({
             for (const c of await local.chunks(e.id)) {
               if (c.kind === "photo" && !c.uploaded) await uploadChunk(c);
             }
+            if (e.kind === "photo") {
+              const detail = await api<Entry & { media: Media[] }>(
+                `entries/${e.id}`,
+              );
+              if (detail.media.some((m) => m.kind === "photo"))
+                await api(`entries/${e.id}/photos-complete`, "POST", {
+                  count: detail.media.filter((m) => m.kind === "photo").length,
+                });
+            }
             if (
+              e.kind !== "photo" &&
               e.sealed &&
               (e.transcription !== "complete" || e.writing !== "complete")
             )
@@ -256,8 +294,10 @@ export default function Diary({
         setBusy(true);
         stream?.getTracks().forEach((t) => t.stop());
         setRecording(false);
+        setInputStream(null);
         writes.current
           .then(async () => {
+            await photoQueue.current;
             s.stopped = true;
             await local.session({ ...s });
             await uploading.current;
@@ -292,6 +332,7 @@ export default function Diary({
         if (r.state !== "inactive") r.stop();
       };
       r.start(10000);
+      setInputStream(stream);
       setRecording(true);
       setElapsed(0);
       setMessage("Recording · saving to this device every 10 seconds");
@@ -312,6 +353,10 @@ export default function Diary({
   async function open(e: Entry) {
     try {
       const detail = await api<Entry & { media: Media[] }>(`entries/${e.id}`);
+      activeId.current = detail.id;
+      mediaRequest.current++;
+      if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
+      audioUrl.current = "";
       setActive(detail);
       setDraft({ title: e.title, body: e.body, tags: e.tags.join(", ") });
       setMediaUrls({ audio: "", photos: [] });
@@ -321,67 +366,151 @@ export default function Diary({
   }
   async function loadMedia() {
     if (!active) return;
+    const entryId = active.id,
+      request = ++mediaRequest.current;
     try {
-      if (mediaUrls.audio) URL.revokeObjectURL(mediaUrls.audio);
       const blobs: Blob[] = [];
-      const photos: string[] = [];
       for (const m of active.media
-        .filter((m) => m.uploaded)
+        .filter((m) => m.uploaded && m.kind === "audio")
         .sort((a, b) => a.sequence - b.sequence)) {
         const { url } = await api<{ url: string }>(
-          `entries/${active.id}/media/${m.id}`,
+          `entries/${entryId}/media/${m.id}`,
         );
-        if (m.kind === "photo") photos.push(url);
-        else {
-          const r = await fetch(url);
-          if (!r.ok) throw new Error("Playback download failed");
-          blobs.push(await r.blob());
-        }
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Playback download failed");
+        blobs.push(await response.blob());
       }
-      setMediaUrls({
-        audio: blobs.length
-          ? URL.createObjectURL(
-              new Blob(blobs, {
-                type: active.media.find((m) => m.kind === "audio")?.mime,
-              }),
-            )
-          : "",
-        photos,
-      });
-    } catch (e) {
-      setError((e as Error).message);
+      if (activeId.current !== entryId || request !== mediaRequest.current)
+        return;
+      if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
+      audioUrl.current = blobs.length
+        ? URL.createObjectURL(
+            new Blob(blobs, {
+              type: active.media.find((m) => m.kind === "audio")?.mime,
+            }),
+          )
+        : "";
+      setMediaUrls({ audio: audioUrl.current, photos: [] });
+    } catch (error) {
+      if (activeId.current === entryId) setError((error as Error).message);
     }
   }
-  async function photos(files: FileList | null) {
-    if (!files || !active) return;
-    setBusy(true);
-    try {
-      let sequence =
-        Math.max(
-          -1,
-          ...active.media
-            .filter((m) => m.kind === "photo")
-            .map((m) => m.sequence),
-        ) + 1;
-      for (const blob of Array.from(files)) {
-        const c = {
+  function choosePhotos(capture: boolean, entryId: string | null) {
+    photoTarget.current = entryId;
+    (capture ? camera : file).current?.click();
+  }
+  async function receivePhotos(files: FileList | null) {
+    if (!files?.length) return;
+    const selected = Array.from(files),
+      target = photoTarget.current;
+    if (!target) {
+      setPhotoDraft({ files: selected, title: "", body: "" });
+      return;
+    }
+    await attachPhotos(selected, target);
+  }
+  function attachPhotos(
+    files: File[],
+    entryId: string,
+    session?: LocalSession,
+  ) {
+    setPhotoBusy(true);
+    const job = photoQueue.current.then(async () => {
+      // Persist every selected image before attempting network operations.
+      const existing = await local.chunks(entryId);
+      let server: Media[] =
+        activeId.current === entryId ? (active?.media ?? []) : [];
+      let sequence = nextPhotoSequence(server, existing);
+      const chunks = [];
+      for (const file of files) {
+        const chunk = {
           id: crypto.randomUUID(),
-          entryId: active.id,
+          entryId,
           sequence: sequence++,
           kind: "photo" as const,
-          blob,
+          blob: await optimizePhoto(file),
           uploaded: false,
         };
-        await local.chunk(c);
-        await uploadChunk(c);
+        await local.chunk(chunk);
+        chunks.push(chunk);
+        if (session) {
+          session.count++;
+          await local.session({ ...session });
+        }
       }
-      await open(active);
+      const recordingSession =
+        current.current?.id === entryId ? current.current : undefined;
+      if (session || recordingSession) {
+        const source = session ?? recordingSession!;
+        await api("entries", "POST", {
+          id: source.id,
+          createdAt: source.createdAt,
+          kind: source.kind ?? "audio",
+          title: source.title,
+          body: source.body,
+        });
+      }
+      server = (await api<Entry & { media: Media[] }>(`entries/${entryId}`))
+        .media;
+      const queued = await local.chunks(entryId);
+      const newIds = new Set(chunks.map((chunk) => chunk.id));
+      let reconciled = nextPhotoSequence(
+        server,
+        queued.filter((chunk) => !newIds.has(chunk.id)),
+      );
+      for (const chunk of chunks) {
+        chunk.sequence = reconciled++;
+        await local.chunk(chunk);
+      }
+      for (const chunk of chunks) await uploadChunk(chunk);
+      const detail = await api<Entry & { media: Media[] }>(
+        `entries/${entryId}`,
+      );
+      if (detail.kind === "photo")
+        await api(`entries/${entryId}/photos-complete`, "POST", {
+          count: detail.media.filter((m) => m.kind === "photo").length,
+        });
+      if (activeId.current === entryId) setActive(detail);
+      if (session) await local.remove(entryId);
+      await refresh();
       setMessage("Photos saved privately.");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+    });
+    photoQueue.current = job.catch(() => {});
+    return job
+      .catch(async (error: Error) => {
+        setError(
+          error.message +
+            " Any photos already saved remain on this device for Retry all. Reselect rejected photos.",
+        );
+        await api(`entries/${entryId}/upload-failure`, "POST", {
+          error: error.message.slice(0, 500),
+        }).catch(() => {});
+      })
+      .finally(() => setPhotoBusy(false));
+  }
+  async function createPhotoEntry() {
+    if (!photoDraft || photoBusy) return;
+    const session: LocalSession = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      kind: "photo",
+      stopped: true,
+      count: 0,
+      title: photoDraft.title,
+      body: photoDraft.body,
+    };
+    await local.session(session);
+    const originalDraft = photoDraft;
+    setPhotoDraft(null);
+    await attachPhotos(originalDraft.files, session.id, session);
+    if (
+      !(await local.chunks(session.id)).length &&
+      (await local.sessions()).some((item) => item.id === session.id)
+    ) {
+      await local.remove(session.id);
+      setPhotoDraft(originalDraft);
     }
+    await refresh();
   }
   const tags = Array.from(new Set(entries.flatMap((e) => e.tags))).sort();
   const visible = entries.filter(
@@ -397,12 +526,34 @@ export default function Diary({
     (e) =>
       e.deleted ||
       e.upload !== "complete" ||
-      e.transcription !== "complete" ||
-      e.writing !== "complete",
+      (e.kind !== "photo" &&
+        (e.transcription !== "complete" || e.writing !== "complete")),
   );
 
   return (
     <div className="app-shell">
+      <input
+        ref={file}
+        hidden
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+        multiple
+        onChange={(e) => {
+          void receivePhotos(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={camera}
+        hidden
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={(e) => {
+          void receivePhotos(e.target.files);
+          e.target.value = "";
+        }}
+      />
       <aside className="sidebar">
         <Link className="wordmark" href="/">
           still<span>YOUR PRIVATE DIARY</span>
@@ -547,7 +698,7 @@ export default function Diary({
                     aria-label={
                       recording ? "Stop recording" : "Start recording"
                     }
-                    disabled={busy}
+                    disabled={busy && !recording}
                     onClick={() =>
                       recording ? recorder.current?.stop() : start()
                     }
@@ -569,6 +720,79 @@ export default function Diary({
                       : "Tap to record. Speak in Malayalam, English, or a little of both."}
                   </p>
                 </div>
+                {recording && inputStream && <Waveform stream={inputStream} />}
+                <div className="media-actions">
+                  <Button
+                    variant="outline"
+                    disabled={photoBusy || (busy && !recording)}
+                    onClick={() =>
+                      choosePhotos(
+                        true,
+                        recording ? (current.current?.id ?? null) : null,
+                      )
+                    }
+                  >
+                    Take photo
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={photoBusy || (busy && !recording)}
+                    onClick={() =>
+                      choosePhotos(
+                        false,
+                        recording ? (current.current?.id ?? null) : null,
+                      )
+                    }
+                  >
+                    <ImagePlus size={15} />
+                    Choose photos
+                  </Button>
+                  {photoBusy && <span role="status">Saving photos…</span>}
+                </div>
+                {photoDraft && (
+                  <div className="photo-composer">
+                    <p>{photoDraft.files.length} photo(s) for today</p>
+                    <label>
+                      Title (optional)
+                      <input
+                        maxLength={200}
+                        value={photoDraft.title}
+                        onChange={(e) =>
+                          setPhotoDraft({
+                            ...photoDraft,
+                            title: e.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Text (optional)
+                      <textarea
+                        maxLength={200000}
+                        value={photoDraft.body}
+                        onChange={(e) =>
+                          setPhotoDraft({ ...photoDraft, body: e.target.value })
+                        }
+                      />
+                    </label>
+                    <Button
+                      disabled={photoBusy}
+                      onClick={() =>
+                        void createPhotoEntry().catch((error: Error) =>
+                          setError(error.message),
+                        )
+                      }
+                    >
+                      Save photo entry
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setPhotoDraft(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
                 <div className="recorder-footer">
                   <span>
                     <Volume2 size={15} /> Your voice becomes a diary entry
@@ -651,7 +875,10 @@ export default function Diary({
                   Transcription happens on this device. Writing happens on the
                   server.
                 </p>
-                <Button disabled={busy || recording} onClick={retry}>
+                <Button
+                  disabled={busy || recording || photoBusy}
+                  onClick={retry}
+                >
                   <RefreshCw size={16} className={busy ? "spin" : ""} />
                   Retry all
                 </Button>
@@ -669,7 +896,11 @@ export default function Diary({
               {sessions.map((s) => (
                 <div className="queue-card" key={s.id}>
                   <div>
-                    <strong>Recording on this device</strong>
+                    <strong>
+                      {s.kind === "photo"
+                        ? "Photo entry on this device"
+                        : "Recording on this device"}
+                    </strong>
                     <p>
                       {new Date(s.createdAt).toLocaleString()} · {s.count} saved
                       chunks
@@ -705,8 +936,12 @@ export default function Diary({
                     ) : (
                       <div className="stages">
                         <span>Cloud: {e.upload}</span>
-                        <span>Transcription: {e.transcription}</span>
-                        <span>Writing: {e.writing}</span>
+                        {e.kind !== "photo" && (
+                          <>
+                            <span>Transcription: {e.transcription}</span>
+                            <span>Writing: {e.writing}</span>
+                          </>
+                        )}
                       </div>
                     )}
                     {e.error && <p className="error-text">{e.error}</p>}
@@ -970,51 +1205,50 @@ export default function Diary({
                 Regenerate
               </Button>
             </div>
-            <details>
-              <summary>Original transcript</summary>
-              <p className="transcript">
-                {active.transcript || "Not transcribed yet."}
-              </p>
-            </details>
+            {active.kind !== "photo" && (
+              <details>
+                <summary>Original transcript</summary>
+                <p className="transcript">
+                  {active.transcript || "Not transcribed yet."}
+                </p>
+              </details>
+            )}
             <div className="media-actions">
-              <Button variant="outline" onClick={loadMedia}>
-                <Volume2 size={15} />
-                Load private media
+              {active.kind !== "photo" && (
+                <Button variant="outline" onClick={loadMedia}>
+                  <Volume2 size={15} />
+                  Load audio
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                disabled={photoBusy}
+                onClick={() => choosePhotos(true, active.id)}
+              >
+                Take photo
               </Button>
               <Button
                 variant="outline"
-                disabled={busy}
-                onClick={() => file.current?.click()}
+                disabled={photoBusy}
+                onClick={() => choosePhotos(false, active.id)}
               >
                 <ImagePlus size={15} />
-                Add photos
+                Choose photos
               </Button>
-              <input
-                ref={file}
-                hidden
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                multiple
-                onChange={(e) => photos(e.target.files)}
-              />
+              {photoBusy && <span role="status">Saving photos…</span>}
             </div>
             {mediaUrls.audio && <audio controls src={mediaUrls.audio} />}
             <div className="photos">
-              {mediaUrls.photos.map((url) => (
-                <a key={url} href={url} target="_blank" rel="noreferrer">
-                  <Image
-                    src={url}
-                    alt="Diary attachment"
-                    width={130}
-                    height={130}
-                    unoptimized
-                  />
-                </a>
-              ))}
+              {active.media
+                .filter((m) => m.kind === "photo" && m.uploaded)
+                .sort((a, b) => a.sequence - b.sequence)
+                .map((m) => (
+                  <PrivatePhoto key={m.id} entryId={active.id} mediaId={m.id} />
+                ))}
             </div>
             <Button
               variant="destructive"
-              disabled={busy}
+              disabled={busy || photoBusy}
               onClick={async () => {
                 if (
                   !confirm("Delete this entry and all of its audio and photos?")

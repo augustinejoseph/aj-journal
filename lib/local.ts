@@ -4,6 +4,9 @@ export type LocalSession = {
   createdAt: string;
   stopped: boolean;
   count: number;
+  kind?: "audio" | "photo";
+  title?: string;
+  body?: string;
 };
 export type LocalChunk = {
   id: string;

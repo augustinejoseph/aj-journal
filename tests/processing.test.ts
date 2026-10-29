@@ -142,3 +142,58 @@ it("explains blocked browser uploads and preserves the local chunk", async () =>
   );
   expect(m.chunk).not.toHaveBeenCalled();
 });
+
+it("recovers a photo-only entry without sealing or transcribing audio", async () => {
+  m.chunks.mockResolvedValue([{ uploaded: true, sequence: 0, kind: "photo" }]);
+  m.api.mockResolvedValue({});
+  await syncSession({
+    id: "photos",
+    createdAt: "today",
+    stopped: true,
+    count: 1,
+    kind: "photo",
+    title: "My day",
+    body: "A walk",
+  });
+  expect(m.api.mock.calls).toEqual([
+    [
+      "entries",
+      "POST",
+      {
+        id: "photos",
+        createdAt: "today",
+        kind: "photo",
+        title: "My day",
+        body: "A walk",
+      },
+    ],
+    ["entries/photos/photos-complete", "POST", { count: 1 }],
+  ]);
+  await processEntry(
+    {
+      kind: "photo",
+      sealed: true,
+      transcription: "pending",
+      writing: "pending",
+    } as Entry,
+    vi.fn(),
+  );
+  expect(m.api).toHaveBeenCalledTimes(2);
+  expect(m.transcribe).not.toHaveBeenCalled();
+});
+it("retains photo recovery data when entry creation fails", async () => {
+  m.api.mockRejectedValue(new Error("offline"));
+  await expect(
+    syncSession({
+      id: "photos",
+      createdAt: "today",
+      kind: "photo",
+      stopped: true,
+      count: 1,
+    }),
+  ).rejects.toThrow("offline");
+  expect(m.chunk).not.toHaveBeenCalled();
+  expect(m.api).toHaveBeenCalledWith("entries/photos/upload-failure", "POST", {
+    error: "offline",
+  });
+});

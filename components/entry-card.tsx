@@ -34,7 +34,9 @@ export function EntryCard({
         <p>
           {e.body ||
             e.transcript ||
-            "Your original recording is waiting here. Open the processing queue to continue."}
+            (e.kind === "photo"
+              ? "Photos from your day."
+              : "Your original recording is waiting here. Open the processing queue to continue.")}
         </p>
         <div className="entry-tags">
           {e.tags.map((t) => (

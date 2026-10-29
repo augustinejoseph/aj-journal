@@ -229,3 +229,99 @@ it("acknowledges a completed audio chunk after the entry has been sealed", async
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ uploaded: true, url: null });
 });
+
+it.each(["photo", "audio"] as const)(
+  "creates a %s entry with appropriate processing state",
+  async (kind) => {
+    mocks.auth.mockResolvedValue({ user: { email: "owner@example.com" } });
+    const values = vi
+      .fn()
+      .mockReturnValue({
+        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+      });
+    mocks.db.mockReturnValue({
+      select: () => ({ from: () => ({ where: async () => [] }) }),
+      insert: () => ({ values }),
+    });
+    const id = "00000000-0000-4000-8000-000000000001";
+    const response = await POST(
+      new Request("https://diary.example/api/entries", {
+        method: "POST",
+        headers: {
+          origin: "https://diary.example",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id,
+          ...(kind === "photo"
+            ? { kind, title: "A day", body: "My photos" }
+            : {}),
+        }),
+      }),
+      ctx(["entries"]),
+    );
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenLastCalledWith(
+      expect.objectContaining(
+        kind === "photo"
+          ? {
+              id,
+              kind,
+              title: "A day",
+              body: "My photos",
+              sealed: true,
+              transcription: "complete",
+              writing: "complete",
+            }
+          : { id, kind: "audio" },
+      ),
+    );
+    if (kind === "audio")
+      expect(values.mock.calls[1][0]).not.toHaveProperty("sealed");
+  },
+);
+it("does not claim an audio transcription lease for a photo entry", async () => {
+  mocks.auth.mockResolvedValue({ user: { email: "owner@example.com" } });
+  const update = vi.fn();
+  mocks.db.mockReturnValue({
+    select: () => ({
+      from: () => ({ where: async () => [{ kind: "photo", deleted: false }] }),
+    }),
+    update,
+  });
+  const id = "00000000-0000-4000-8000-000000000001";
+  const response = await POST(
+    new Request(`https://diary.example/api/entries/${id}/transcription`, {
+      method: "POST",
+      headers: { origin: "https://diary.example" },
+      body: "{}",
+    }),
+    ctx(["entries", id, "transcription"]),
+  );
+  expect(response.status).toBe(409);
+  expect(update).not.toHaveBeenCalled();
+});
+it("keeps a photo entry pending until all expected images are uploaded", async () => {
+  mocks.auth.mockResolvedValue({ user: { email: "owner@example.com" } });
+  const select = vi
+    .fn()
+    .mockReturnValueOnce({
+      from: () => ({ where: async () => [{ kind: "photo", deleted: false }] }),
+    })
+    .mockReturnValueOnce({
+      from: () => ({ where: async () => [{ kind: "photo", uploaded: false }] }),
+    });
+  const update = vi.fn();
+  mocks.db.mockReturnValue({ select, update });
+  const id = "00000000-0000-4000-8000-000000000001";
+  const response = await POST(
+    new Request(`https://diary.example/api/entries/${id}/photos-complete`, {
+      method: "POST",
+      headers: { origin: "https://diary.example" },
+      body: JSON.stringify({ count: 1 }),
+    }),
+    ctx(["entries", id, "photos-complete"]),
+  );
+  expect(response.status).toBe(409);
+  expect(update).not.toHaveBeenCalled();
+});

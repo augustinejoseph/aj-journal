@@ -24,23 +24,33 @@ export async function uploadChunk(c: LocalChunk) {
       });
     } catch {
       throw new Error(
-        `Cloud upload could not connect. Check your connection and R2 CORS: allow ${window.location.origin} with PUT and Content-Type. Audio remains on this device.`,
+        `Cloud upload could not connect. Check your connection and R2 CORS: allow ${window.location.origin} with PUT and Content-Type. Media remains on this device.`,
       );
     }
     if (!response.ok)
-      throw new Error("Upload interrupted. Audio remains on this device.");
+      throw new Error("Upload interrupted. Media remains on this device.");
     await api(`entries/${c.entryId}/media/${c.id}`, "POST", {});
   }
   await local.chunk({ ...c, uploaded: true });
 }
 export async function syncSession(s: LocalSession) {
   try {
-    await api("entries", "POST", { id: s.id, createdAt: s.createdAt });
+    await api("entries", "POST", {
+      id: s.id,
+      createdAt: s.createdAt,
+      kind: s.kind ?? "audio",
+      title: s.title,
+      body: s.body,
+    });
     const chunks = await local.chunks(s.id);
     for (const c of chunks.sort((a, b) => a.sequence - b.sequence)) {
       if (!c.uploaded) await uploadChunk(c);
     }
-    if (s.stopped)
+    if (s.stopped && s.kind === "photo")
+      await api(`entries/${s.id}/photos-complete`, "POST", {
+        count: chunks.filter((c) => c.kind === "photo").length,
+      });
+    else if (s.stopped)
       await api(`entries/${s.id}/seal`, "POST", { count: s.count });
   } catch (error) {
     await api(`entries/${s.id}/upload-failure`, "POST", {
@@ -56,7 +66,7 @@ export async function processEntry(
   entry: Entry,
   progress: (s: string) => void,
 ) {
-  if (!entry.sealed) return;
+  if (!entry.sealed || entry.kind === "photo") return;
   if (entry.transcription !== "complete") {
     const { token } = await api<{ token: string | null }>(
       `entries/${entry.id}/transcription`,

@@ -998,3 +998,23 @@ audio {
     padding: 6px;
   }
 }
+
+.photo-composer {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.photo-composer label {
+  display: grid;
+  gap: 6px;
+}
+.photo-composer input,
+.photo-composer textarea {
+  width: 100%;
+}
+.recorder > .media-actions {
+  justify-content: center;
+  flex-wrap: wrap;
+}

@@ -20,6 +20,7 @@ export const entries = pgTable("entries", {
   id: uuid().primaryKey(),
   userId: text().references(() => users.id),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  kind: text().$type<"audio" | "photo">().notNull().default("audio"),
   title: text().notNull().default("Untitled recording"),
   body: text().notNull().default(""),
   transcript: text().notNull().default(""),
