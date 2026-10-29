@@ -632,7 +632,7 @@ export default function Diary({
                 ? "Processing queue"
                 : "Settings"}
           </span>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
             <EcosystemMenu />
             <span className="avatar" title={email}>
               {email.slice(0, 1).toUpperCase()}

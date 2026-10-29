@@ -1018,3 +1018,5 @@ audio {
   justify-content: center;
   flex-wrap: wrap;
 }
+
+@media(max-width:640px){.main>header{gap:12px}.main>header .breadcrumb{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}

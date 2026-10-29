@@ -16,7 +16,7 @@
     "r2:cors": "node scripts/r2-cors.mjs"
   },
   "dependencies": {
-    "@ajoseph/app-launcher": "file:vendor/ajoseph-app-launcher-0.1.3.tgz",
+    "@ajoseph/app-launcher": "file:vendor/ajoseph-app-launcher-0.1.4.tgz",
     "@aws-sdk/client-s3": "^3.922.0",
     "@aws-sdk/s3-request-presigner": "^3.922.0",
     "@huggingface/transformers": "^4.3.1",
