@@ -234,11 +234,9 @@ it.each(["photo", "audio"] as const)(
   "creates a %s entry with appropriate processing state",
   async (kind) => {
     mocks.auth.mockResolvedValue({ user: { email: "owner@example.com" } });
-    const values = vi
-      .fn()
-      .mockReturnValue({
-        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-      });
+    const values = vi.fn().mockReturnValue({
+      onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    });
     mocks.db.mockReturnValue({
       select: () => ({ from: () => ({ where: async () => [] }) }),
       insert: () => ({ values }),
@@ -325,3 +323,86 @@ it("keeps a photo entry pending until all expected images are uploaded", async (
   expect(response.status).toBe(409);
   expect(update).not.toHaveBeenCalled();
 });
+
+it("saves typed entries as complete without audio processing", async () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  mocks.auth.mockResolvedValue({ user: { email: "owner@example.com" } });
+  const values = vi
+    .fn()
+    .mockReturnValue({ onConflictDoNothing: async () => [] });
+  mocks.db.mockReturnValue({
+    select: () => ({ from: () => ({ where: async () => [] }) }),
+    insert: () => ({ values }),
+  });
+  const res = await POST(
+    new Request("https://diary.example/api/entries", {
+      method: "POST",
+      headers: {
+        origin: "https://diary.example",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id, kind: "text", body: "My own words." }),
+    }),
+    ctx(["entries"]),
+  );
+  expect(res.status).toBe(200);
+  expect(values).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      id,
+      kind: "text",
+      body: "My own words.",
+      upload: "complete",
+      transcription: "complete",
+      writing: "complete",
+      sealed: true,
+    }),
+  );
+});
+it("rejects empty typed entries before writing to the database", async () => {
+  mocks.auth.mockResolvedValue({ user: { email: "owner@example.com" } });
+  const insert = vi.fn();
+  mocks.db.mockReturnValue({ insert });
+  const res = await POST(
+    new Request("https://diary.example/api/entries", {
+      method: "POST",
+      headers: {
+        origin: "https://diary.example",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "00000000-0000-4000-8000-000000000001",
+        kind: "text",
+        body: "   ",
+      }),
+    }),
+    ctx(["entries"]),
+  );
+  expect(res.status).toBe(400);
+  expect(insert).not.toHaveBeenCalled();
+});
+it.each(["seal", "transcription", "transcript", "generate"])(
+  "refuses %s for typed entries",
+  async (action) => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    mocks.auth.mockResolvedValue({ user: { email: "owner@example.com" } });
+    mocks.db.mockReturnValue({
+      select: () => ({
+        from: () => ({
+          where: async () => [{ id, kind: "text", deleted: false }],
+        }),
+      }),
+    });
+    const res = await POST(
+      new Request(`https://diary.example/api/entries/${id}/${action}`, {
+        method: "POST",
+        headers: { origin: "https://diary.example" },
+        body: "{}",
+      }),
+      ctx(["entries", id, action]),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "This entry does not need audio processing",
+    });
+  },
+);

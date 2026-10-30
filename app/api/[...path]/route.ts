@@ -68,11 +68,16 @@ async function handle(
           .object({
             id: uuid,
             createdAt: z.iso.datetime().optional(),
-            kind: z.enum(["audio", "photo"]).default("audio"),
+            kind: z.enum(["audio", "photo", "text"]).default("audio"),
             title: z.string().max(200).optional(),
             body: z.string().max(200000).optional(),
           })
           .parse(await req.json());
+        if (kind === "text" && !body?.trim())
+          return Response.json(
+            { error: "Write something before saving." },
+            { status: 400 },
+          );
         const [existing] = await database
           .select()
           .from(entries)
@@ -99,10 +104,13 @@ async function handle(
             id,
             userId,
             kind,
-            ...(kind === "photo"
+            ...(kind === "photo" || kind === "text"
               ? {
-                  title: title?.trim() || "Photos from today",
+                  title:
+                    title?.trim() ||
+                    (kind === "text" ? "A moment, kept" : "Photos from today"),
                   body: body || "",
+                  ...(kind === "text" ? { upload: "complete" } : {}),
                   transcription: "complete",
                   writing: "complete",
                   sealed: true,
@@ -200,8 +208,11 @@ async function handle(
           ).test(data.mime)
         )
           throw new Error("Unsupported media type");
-        if (entry.kind === "photo" && data.kind === "audio")
-          throw new Error("Photo entries cannot contain audio");
+        if (
+          (entry.kind === "photo" || entry.kind === "text") &&
+          data.kind === "audio"
+        )
+          throw new Error("Only recordings can contain audio");
         if (entry.sealed && data.kind === "audio") {
           const [saved] = await database
             .select()
@@ -309,10 +320,10 @@ async function handle(
       return Response.json({ ok: true });
     }
     if (
-      entry.kind === "photo" &&
+      (entry.kind === "photo" || entry.kind === "text") &&
       ["seal", "transcription", "transcript", "generate"].includes(p[2])
     )
-      throw new Error("Photo entries do not need audio processing");
+      throw new Error("This entry does not need audio processing");
     if (p[2] === "seal" && method === "POST") {
       const { count } = z
         .object({ count: z.number().int().positive() })

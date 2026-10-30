@@ -66,7 +66,7 @@ export async function processEntry(
   entry: Entry,
   progress: (s: string) => void,
 ) {
-  if (!entry.sealed || entry.kind === "photo") return;
+  if (!entry.sealed || entry.kind === "photo" || entry.kind === "text") return;
   if (entry.transcription !== "complete") {
     const { token } = await api<{ token: string | null }>(
       `entries/${entry.id}/transcription`,

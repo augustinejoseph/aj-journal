@@ -62,6 +62,9 @@ export default function Diary({
       audio: "",
       photos: [],
     });
+  const [composeMode, setComposeMode] = useState<"text" | "audio">("text");
+  const [textDraft, setTextDraft] = useState({ title: "", body: "" });
+  const textEntryId = useRef<string | null>(null);
   const [inputStream, setInputStream] = useState<MediaStream | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoDraft, setPhotoDraft] = useState<{
@@ -203,7 +206,7 @@ export default function Diary({
                 });
             }
             if (
-              e.kind !== "photo" &&
+              e.kind === "audio" &&
               e.sealed &&
               (e.transcription !== "complete" || e.writing !== "complete")
             )
@@ -222,6 +225,28 @@ export default function Diary({
       );
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveText() {
+    if (busy || recording || photoBusy || !textDraft.body.trim()) return;
+    setBusy(true);
+    setError("");
+    textEntryId.current ??= crypto.randomUUID();
+    try {
+      await api("entries", "POST", {
+        id: textEntryId.current,
+        kind: "text",
+        title: textDraft.title,
+        body: textDraft.body,
+      });
+      textEntryId.current = null;
+      setTextDraft({ title: "", body: "" });
+      setMessage("Entry saved.");
+      await refresh();
+    } catch (error) {
+      setError((error as Error).message);
     } finally {
       setBusy(false);
     }
@@ -526,7 +551,7 @@ export default function Diary({
     (e) =>
       e.deleted ||
       e.upload !== "complete" ||
-      (e.kind !== "photo" &&
+      (e.kind === "audio" &&
         (e.transcription !== "complete" || e.writing !== "complete")),
   );
 
@@ -632,7 +657,14 @@ export default function Diary({
                 ? "Processing queue"
                 : "Settings"}
           </span>
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              flexShrink: 0,
+            }}
+          >
             <EcosystemMenu />
             <span className="avatar" title={email}>
               {email.slice(0, 1).toUpperCase()}
@@ -681,46 +713,120 @@ export default function Diary({
               <section
                 className={"recorder " + (recording ? "is-recording" : "")}
               >
-                <div className="recorder-top">
-                  <span className="eyebrow">
-                    {recording
-                      ? "YOUR VOICE, BEING KEPT"
-                      : "START WITH YOUR VOICE"}
-                  </span>
-                  <span className="pill">
-                    <span className="private-dot" />
-                    Private by default
-                  </span>
-                </div>
-                <div className="record-center">
-                  <button
-                    className="record-button"
-                    aria-label={
-                      recording ? "Stop recording" : "Start recording"
-                    }
-                    disabled={busy && !recording}
-                    onClick={() =>
-                      recording ? recorder.current?.stop() : start()
-                    }
+                <div
+                  className="compose-options"
+                  role="group"
+                  aria-label="Entry type"
+                >
+                  <Button
+                    variant={composeMode === "text" ? "default" : "outline"}
+                    aria-pressed={composeMode === "text"}
+                    disabled={busy || recording || photoBusy}
+                    onClick={() => setComposeMode("text")}
                   >
-                    {recording ? (
-                      <Square fill="currentColor" size={25} />
-                    ) : (
-                      <Mic size={28} />
-                    )}
-                  </button>
-                  <h2>
-                    {recording
-                      ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
-                      : "What’s on your mind?"}
-                  </h2>
-                  <p>
-                    {recording
-                      ? "Tap to finish and save your moment."
-                      : "Tap to record. Speak in Malayalam, English, or a little of both."}
-                  </p>
+                    Write
+                  </Button>
+                  <Button
+                    variant="outline"
+                    aria-pressed={composeMode === "audio"}
+                    disabled={busy || recording || photoBusy}
+                    onClick={() => setComposeMode("audio")}
+                  >
+                    <Mic size={15} /> Record
+                  </Button>
                 </div>
-                {recording && inputStream && <Waveform stream={inputStream} />}
+                {composeMode === "text" && (
+                  <form
+                    className="text-composer"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveText();
+                    }}
+                  >
+                    <label>
+                      Title (optional)
+                      <input
+                        maxLength={200}
+                        value={textDraft.title}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setTextDraft({
+                            ...textDraft,
+                            title: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      What’s on your mind?
+                      <textarea
+                        placeholder="Start writing…"
+                        maxLength={200000}
+                        rows={7}
+                        value={textDraft.body}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setTextDraft({
+                            ...textDraft,
+                            body: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <Button
+                      type="submit"
+                      disabled={busy || photoBusy || !textDraft.body.trim()}
+                    >
+                      {busy ? "Saving…" : "Save entry"}
+                    </Button>
+                  </form>
+                )}
+                {composeMode === "audio" && (
+                  <>
+                    <div className="recorder-top">
+                      <span className="eyebrow">
+                        {recording
+                          ? "YOUR VOICE, BEING KEPT"
+                          : "START WITH YOUR VOICE"}
+                      </span>
+                      <span className="pill">
+                        <span className="private-dot" />
+                        Private by default
+                      </span>
+                    </div>
+                    <div className="record-center">
+                      <button
+                        className="record-button"
+                        aria-label={
+                          recording ? "Stop recording" : "Start recording"
+                        }
+                        disabled={busy && !recording}
+                        onClick={() =>
+                          recording ? recorder.current?.stop() : start()
+                        }
+                      >
+                        {recording ? (
+                          <Square fill="currentColor" size={25} />
+                        ) : (
+                          <Mic size={28} />
+                        )}
+                      </button>
+                      <h2>
+                        {recording
+                          ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
+                          : "What’s on your mind?"}
+                      </h2>
+                      <p>
+                        {recording
+                          ? "Tap to finish and save your moment."
+                          : "Tap to record. Speak in Malayalam, English, or a little of both."}
+                      </p>
+                    </div>
+                    {recording && inputStream && (
+                      <Waveform stream={inputStream} />
+                    )}
+                  </>
+                )}
                 <div className="media-actions">
                   <Button
                     variant="outline"
@@ -793,17 +899,22 @@ export default function Diary({
                     </Button>
                   </div>
                 )}
-                <div className="recorder-footer">
-                  <span>
-                    <Volume2 size={15} /> Your voice becomes a diary entry
-                  </span>
-                  <span>No timer. Take your time.</span>
-                </div>
+                {composeMode === "audio" && (
+                  <div className="recorder-footer">
+                    <span>
+                      <Volume2 size={15} /> Your voice becomes a diary entry
+                    </span>
+                    <span>No timer. Take your time.</span>
+                  </div>
+                )}
               </section>
-              <p className="practical">
-                Keep this tab open while recording or transcribing. Browser
-                suspension, device memory, and storage can interrupt recording.
-              </p>
+              {composeMode === "audio" && (
+                <p className="practical">
+                  Keep this tab open while recording or transcribing. Browser
+                  suspension, device memory, and storage can interrupt
+                  recording.
+                </p>
+              )}
               <div className="feed-toolbar">
                 <h2>
                   Your moments <span>{visible.length}</span>
@@ -936,7 +1047,7 @@ export default function Diary({
                     ) : (
                       <div className="stages">
                         <span>Cloud: {e.upload}</span>
-                        {e.kind !== "photo" && (
+                        {e.kind === "audio" && (
                           <>
                             <span>Transcription: {e.transcription}</span>
                             <span>Writing: {e.writing}</span>
@@ -1176,36 +1287,38 @@ export default function Diary({
               >
                 Save changes
               </Button>
-              <Button
-                variant="outline"
-                disabled={busy || !active.transcript}
-                onClick={async () => {
-                  if (
-                    !confirm(
-                      "Replace your current title, text and tags with a fresh version? The original transcript stays safe.",
+              {active.kind === "audio" && (
+                <Button
+                  variant="outline"
+                  disabled={busy || !active.transcript}
+                  onClick={async () => {
+                    if (
+                      !confirm(
+                        "Replace your current title, text and tags with a fresh version? The original transcript stays safe.",
+                      )
                     )
-                  )
-                    return;
-                  setBusy(true);
-                  try {
-                    await api(`entries/${active.id}/generate`, "POST", {
-                      force: true,
-                    });
-                    await refresh();
-                    const updated = await api<Entry>(`entries/${active.id}`);
-                    await open(updated);
-                  } catch (e) {
-                    setError((e as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                <RefreshCw size={15} />
-                Regenerate
-              </Button>
+                      return;
+                    setBusy(true);
+                    try {
+                      await api(`entries/${active.id}/generate`, "POST", {
+                        force: true,
+                      });
+                      await refresh();
+                      const updated = await api<Entry>(`entries/${active.id}`);
+                      await open(updated);
+                    } catch (e) {
+                      setError((e as Error).message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <RefreshCw size={15} />
+                  Regenerate
+                </Button>
+              )}
             </div>
-            {active.kind !== "photo" && (
+            {active.kind === "audio" && (
               <details>
                 <summary>Original transcript</summary>
                 <p className="transcript">
@@ -1214,7 +1327,7 @@ export default function Diary({
               </details>
             )}
             <div className="media-actions">
-              {active.kind !== "photo" && (
+              {active.kind === "audio" && (
                 <Button variant="outline" onClick={loadMedia}>
                   <Volume2 size={15} />
                   Load audio
