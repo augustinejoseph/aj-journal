@@ -24,6 +24,7 @@ import Link from "next/link";
 import { Waveform } from "./waveform";
 import { PrivatePhoto } from "./private-photo";
 import { optimizePhoto, nextPhotoSequence } from "@/lib/photos";
+import { mediaBlob, clearMediaCache } from "@/lib/media-cache";
 import { api } from "@/lib/api";
 import type { Entry, Media } from "@/lib/schema";
 import { local, LocalSession } from "@/lib/local";
@@ -191,6 +192,7 @@ export default function Diary({
           try {
             if (e.deleted) {
               await api(`entries/${e.id}`, "DELETE");
+              await clearMediaCache(e.id);
               await local.remove(e.id);
               continue;
             }
@@ -400,12 +402,7 @@ export default function Diary({
       for (const m of active.media
         .filter((m) => m.uploaded && m.kind === "audio")
         .sort((a, b) => a.sequence - b.sequence)) {
-        const { url } = await api<{ url: string }>(
-          `entries/${entryId}/media/${m.id}`,
-        );
-        const response = await fetch(url);
-        if (!response.ok) throw new Error("Playback download failed");
-        blobs.push(await response.blob());
+        blobs.push(await mediaBlob(entryId, m.id));
       }
       if (activeId.current !== entryId || request !== mediaRequest.current)
         return;
@@ -641,7 +638,12 @@ export default function Diary({
             <Settings size={17} />
             Settings
           </button>
-          <form action={logout}>
+          <form
+            action={async () => {
+              await clearMediaCache();
+              await logout();
+            }}
+          >
             <button className="nav-item">
               <LogOut size={17} />
               Sign out
@@ -1383,6 +1385,7 @@ export default function Diary({
                 setBusy(true);
                 try {
                   await api(`entries/${active.id}`, "DELETE");
+                  await clearMediaCache(active.id);
                   await local.remove(active.id);
                   setActive(null);
                   await refresh();

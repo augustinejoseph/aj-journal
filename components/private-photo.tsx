@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { api } from "@/lib/api";
-const urls = new Map<string, { url: string; expires: number }>();
+import { mediaBlob } from "@/lib/media-cache";
 export function PrivatePhoto({
   entryId,
   mediaId,
@@ -15,7 +14,6 @@ export function PrivatePhoto({
     [attempt, setAttempt] = useState(0);
   const [url, setUrl] = useState(""),
     [error, setError] = useState(false);
-  const renewed = useRef(false);
   const key = `${entryId}/media/${mediaId}`;
   useEffect(() => {
     if (!host.current) return;
@@ -38,30 +36,22 @@ export function PrivatePhoto({
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
-    const cached = urls.get(key);
-    const request =
-      cached && cached.expires > Date.now()
-        ? Promise.resolve(cached)
-        : api<{ url: string }>(`entries/${key}`).then(({ url }) => {
-            const result = { url, expires: Date.now() + 150000 };
-            for (const [id, cached] of urls)
-              if (cached.expires <= Date.now()) urls.delete(id);
-            urls.set(key, result);
-            return result;
-          });
-    void request
-      .then((result) => {
-        if (!cancelled) setUrl(result.url);
+    let objectUrl = "";
+    void mediaBlob(entryId, mediaId)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
       })
       .catch(() => {
         if (!cancelled) setError(true);
       });
     return () => {
       cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [key, visible, attempt]);
+  }, [key, entryId, mediaId, visible, attempt]);
   function retry() {
-    urls.delete(key);
     setError(false);
     setUrl("");
     setAttempt((value) => value + 1);
@@ -71,24 +61,13 @@ export function PrivatePhoto({
       {error ? (
         <button
           onClick={() => {
-            renewed.current = false;
             retry();
           }}
         >
           Retry photo
         </button>
       ) : url ? (
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(event) => {
-            if ((urls.get(key)?.expires ?? 0) < Date.now()) {
-              event.preventDefault();
-              retry();
-            }
-          }}
-        >
+        <a href={url} target="_blank" rel="noreferrer">
           <Image
             src={url}
             alt="Diary attachment"
@@ -98,12 +77,7 @@ export function PrivatePhoto({
             loading="lazy"
             decoding="async"
             style={{ objectFit: "cover" }}
-            onError={() => {
-              if (!renewed.current) {
-                renewed.current = true;
-                retry();
-              } else setError(true);
-            }}
+            onError={() => setError(true)}
           />
         </a>
       ) : (

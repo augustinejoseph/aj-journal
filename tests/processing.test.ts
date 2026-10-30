@@ -197,3 +197,24 @@ it("retains photo recovery data when entry creation fails", async () => {
     error: "offline",
   });
 });
+
+it("coalesces concurrent upload attempts to avoid duplicate R2 PUTs", async () => {
+  m.api.mockImplementation(async (path: string) =>
+    path.endsWith("/media")
+      ? { uploaded: false, url: "https://storage.example" }
+      : {},
+  );
+  const fetch = vi.fn().mockResolvedValue(new Response(""));
+  vi.stubGlobal("fetch", fetch);
+  const chunk = {
+    id: "same",
+    entryId: "entry",
+    sequence: 0,
+    kind: "audio" as const,
+    blob: new Blob(["audio"]),
+    uploaded: false,
+  };
+  await Promise.all([uploadChunk(chunk), uploadChunk(chunk)]);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(m.chunk).toHaveBeenCalledTimes(1);
+});

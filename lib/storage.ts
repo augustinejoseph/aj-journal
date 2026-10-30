@@ -29,7 +29,11 @@ export const storage = {
   read: (key: string) =>
     getSignedUrl(
       client(),
-      new GetObjectCommand({ Bucket: bucket(), Key: key }),
+      new GetObjectCommand({
+        Bucket: bucket(),
+        Key: key,
+        ResponseCacheControl: "private, max-age=31536000, immutable",
+      }),
       { expiresIn: 180 },
     ),
   head: (key: string) =>

@@ -278,6 +278,7 @@ async function handle(
         return Response.json({ url: await storage.read(file.key) });
       }
       if (method === "POST") {
+        if (file.uploaded) return Response.json({ ok: true });
         const head = await storage.head(file.key);
         if (head.ContentLength !== file.size)
           throw new Error("Upload size mismatch");

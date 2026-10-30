@@ -1,8 +1,22 @@
+import { mediaBlob } from "./media-cache";
 import { api } from "./api";
 import { local, LocalSession, LocalChunk } from "./local";
 import { Entry, Media } from "./schema";
 import { transcribe } from "./transcription";
-export async function uploadChunk(c: LocalChunk) {
+const uploads = new Map<string, Promise<void>>();
+export function uploadChunk(c: LocalChunk): Promise<void> {
+  const existing = uploads.get(c.id);
+  if (existing) return existing;
+  const request = performUpload(c);
+  uploads.set(c.id, request);
+  void request
+    .finally(() => {
+      if (uploads.get(c.id) === request) uploads.delete(c.id);
+    })
+    .catch(() => {});
+  return request;
+}
+async function performUpload(c: LocalChunk) {
   const result = await api<{ url: string | null; uploaded: boolean }>(
     `entries/${c.entryId}/media`,
     "POST",
@@ -93,12 +107,7 @@ export async function processEntry(
         .sort((a, b) => a.sequence - b.sequence);
       const blobs: Blob[] = [];
       for (const chunk of chunks) {
-        const { url } = await api<{ url: string }>(
-          `entries/${entry.id}/media/${chunk.id}`,
-        );
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Audio download failed");
-        blobs.push(await res.blob());
+        blobs.push(await mediaBlob(entry.id, chunk.id));
       }
       progress("Preparing audio…");
       const transcript = await transcribe(

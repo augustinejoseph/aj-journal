@@ -25,6 +25,8 @@ const database = () =>
     },
   });
 export const local = {
+  getChunk: async (id: string) =>
+    (await database()).get("chunks", id) as Promise<LocalChunk | undefined>,
   sessions: async () =>
     (await database()).getAll("sessions") as Promise<LocalSession[]>,
   session: async (s: LocalSession) => (await database()).put("sessions", s),

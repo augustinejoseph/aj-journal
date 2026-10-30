@@ -406,3 +406,30 @@ it.each(["seal", "transcription", "transcript", "generate"])(
     });
   },
 );
+
+it("does not repeat R2 HEAD for an already confirmed upload", async () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const mediaId = "00000000-0000-4000-8000-000000000002";
+  mocks.auth.mockResolvedValue({ user: { email: "owner@example.com" } });
+  const select = vi
+    .fn()
+    .mockReturnValueOnce({
+      from: () => ({ where: async () => [{ id, deleted: false }] }),
+    })
+    .mockReturnValueOnce({
+      from: () => ({ where: async () => [{ id: mediaId, uploaded: true }] }),
+    });
+  mocks.db.mockReturnValue({ select });
+  const { storage } = await import("../lib/storage");
+  const head = vi.spyOn(storage, "head");
+  const res = await POST(
+    new Request(`https://diary.example/api/entries/${id}/media/${mediaId}`, {
+      method: "POST",
+      headers: { origin: "https://diary.example" },
+      body: "{}",
+    }),
+    ctx(["entries", id, "media", mediaId]),
+  );
+  expect(res.status).toBe(200);
+  expect(head).not.toHaveBeenCalled();
+});
