@@ -33,7 +33,7 @@ import {
   syncSession,
   uploadChunk,
 } from "@/lib/processing";
-import { dateKey } from "@/lib/dates";
+import { dateKey, entryTimestamp } from "@/lib/dates";
 import { JournalCalendar } from "./calendar";
 import { EntryCard } from "./entry-card";
 export default function Diary({
@@ -62,6 +62,7 @@ export default function Diary({
       audio: "",
       photos: [],
     });
+  const [entryDate, setEntryDate] = useState(() => dateKey(new Date()));
   const [composeMode, setComposeMode] = useState<"text" | "audio">("text");
   const [textDraft, setTextDraft] = useState({ title: "", body: "" });
   const textEntryId = useRef<string | null>(null);
@@ -238,6 +239,7 @@ export default function Diary({
       await api("entries", "POST", {
         id: textEntryId.current,
         kind: "text",
+        createdAt: entryTimestamp(entryDate),
         title: textDraft.title,
         body: textDraft.body,
       });
@@ -271,7 +273,7 @@ export default function Diary({
       );
       const s: LocalSession = {
         id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
+        createdAt: entryTimestamp(entryDate),
         stopped: false,
         count: 0,
       };
@@ -517,7 +519,7 @@ export default function Diary({
     if (!photoDraft || photoBusy) return;
     const session: LocalSession = {
       id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
+      createdAt: entryTimestamp(entryDate),
       kind: "photo",
       stopped: true,
       count: 0,
@@ -735,6 +737,17 @@ export default function Diary({
                     <Mic size={15} /> Record
                   </Button>
                 </div>
+                <label className="entry-date-picker">
+                  Entry date
+                  <input
+                    type="date"
+                    required
+                    max={dateKey(new Date())}
+                    value={entryDate}
+                    disabled={busy || recording || photoBusy}
+                    onChange={(event) => setEntryDate(event.target.value)}
+                  />
+                </label>
                 {composeMode === "text" && (
                   <form
                     className="text-composer"

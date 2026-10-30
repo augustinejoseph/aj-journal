@@ -1022,3 +1022,5 @@ audio {
 @media(max-width:640px){.main>header{gap:12px}.main>header .breadcrumb{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 
 .compose-options{display:flex;gap:10px;margin-bottom:24px}.text-composer{display:grid;gap:18px}.text-composer label{display:grid;gap:8px;font-size:14px}.text-composer input,.text-composer textarea{width:100%;padding:12px;border:1px solid var(--line,#d9ddd2);border-radius:10px;background:transparent;color:inherit;font:inherit}.text-composer textarea{resize:vertical;min-height:170px;line-height:1.7}.text-composer button{justify-self:start}
+
+.entry-date-picker{display:flex;align-items:center;gap:12px;margin-bottom:20px;font-size:14px}.entry-date-picker input{min-width:0;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:inherit}
